@@ -5,3 +5,4 @@
 # ignore visuald specific files
 *.visualdproj
 *.sln
+*.suo
