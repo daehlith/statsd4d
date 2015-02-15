@@ -8,16 +8,16 @@ Usage
 
 Quickly, to use:
 
-	>>> import statsd;
-	>>> c = statsd.StatsClient(); // connect to a statsd server running on 'localhost' at the default port 8125.
-	>>> c.incr('foo'); // increment the 'foo' counter.
-	>>> c.timing('stats.timed', 320); // Record a 320 ms 'stats.timed'.
+	import statsd;
+	auto c = new statsd.StatsClient(); // connect to a statsd server running on "localhost" at the default port 8125.
+	c.incr("foo"); // increment the "foo" counter.
+	c.timing("stats.timed", 320); // Record a 320 ms "stats.timed".
 
 You can also prefix all your stats:
 
-	>>> import statsd;
-	>>> c = statsd.StatsClient('localhost', 8125, 'foo');
-	>>> c.incr('bar'); // Will be 'foo.bar' in statsd/graphite.
+	import statsd;
+	auto c = new statsd.StatsClient("localhost", 8125, "foo");
+	c.incr("bar"); // Will be "foo.bar" in statsd/graphite.
 
 Building
 --------
