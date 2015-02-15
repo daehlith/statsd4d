@@ -20,35 +20,23 @@
  */
 module statsd;
 
-// StatsD Metrics Export Specification v0.1: https://github.com/b/statsd_spec
-// etsy's statsd definition: https://github.com/etsy/statsd/blob/master/docs/metric_types.md
-
-// default server port: 8125
-
-// suggested payload sizes for network classifications:
-//  - Fast Ethernet: 1432
-//  - Gigabit Ethernet: 8932
-//  - Commodity Internet: 512
-
-// type info: gauges are 32 bit floats, while counters are 64 bit ints [citation needed]
-
 import std.random : uniform;
-import std.socket : Address, getAddress, UdpSocket;
+import std.socket : Address, getAddress, InternetAddress, SocketOption, SocketOptionLevel, UdpSocket;
 
-class StatsClient(SocketType = UdpSocket)
+class StatsClient
 {
 	/**
 	* Create a StatsClient instance.
 	* 
 	* Params:
-	*      host = the host on which the statsd server runs, defaults to "localhost".
-	*      port = the port on which the statsd server runs, defaults to 8125.
+	*      host = the host on which the statsd server runs.
+	*      port = the port on which the statsd server runs.
 	*      prefix = an optional prefix for stats recorded with this StatsClient instance.
 	*      mtu = the maximum transmissions size, defaults to 512 which is reasonable for UDP packets on commodity internet.
 	*/
-	this(string host="localhost", ushort port=8125, string prefix="", size_t mtu=512)
+	this(string host, ushort port, string prefix="")
 	{
-		this(getAddress(host, port)[0], prefix, mtu);
+		this(getAddress(host, port)[0], prefix);
 	}
 
 	/**
@@ -57,107 +45,82 @@ class StatsClient(SocketType = UdpSocket)
 	* Params:
 	*      addr = the address at which the statsd server runs.
 	*      prefix = an optional prefix for stats recorded with this StatsClient instance.
-	*      mtu = the maximum transmission size, defaults to 512 which is reasonable for UDP packets on commodity internet.
 	*/
-	this(Address addr, string prefix="", size_t mtu=512)
+	this(Address addr, string prefix="")
 	{
-		socket.connect(addr);
+		socket = new UdpSocket;
+		this.addr = addr;
 		this.prefix = prefix;
-		this.mtu = mtu;
 	}
 
-	Pipeline pipeline()
+	void inc(string stat, int count=1, float rate=1)
 	{
-		return new Pipeline(this);
+		sendStat(stat, encodeValue(count, "c"), rate);
 	}
 
-	Timer timer()
+	void dec(string stat, int count=1, float rate=1)
 	{
-		return new Timer(this);
+		inc(stat, -count, rate);
 	}
 
-	void incr(string stat, count=1, rate=1)
+	void gauge(string stat, int value, float rate=1)
 	{
-		sendStat(stat, count.stringof~"|c", rate);
-	}
-
-	void decr(string stat, count=1, rate=1)
-	{
-		sendStat(stat, -count, rate);
-	}
-
-	void gauge(string stat, int value, float rate=1, bool delta=false)
-	{
-		// to set a gauge to a negative value, one must first specify set it to 0.
-		if ( value < 0 && ! delta )
-		{
-			if (rate < uniform(0.0, 1.0))
-			{
-				return;
-			}
-			// send as pipeline:
-			//  sendStat(stat, "0|g", 1)
-			// 	sendStat(stat, value.stringof~"|g", 1);
-		}
-		else
-		{
-			char prefix = delta > 0 && value >= 0 ? "+" : "";
-			sendStat(stat, prefix~value.stringof~"|g", rate);
-		}
+		sendStat(stat, encodeValue(value, "g"), rate);
 	}
 
 	void set(string stat, int value, float rate=1)
 	{
-		sendStat(stat, value.stringof~"|s", rate);
+		sendStat(stat, encodeValue(value, "s"), rate);
 	}
 
 	void timing(string stat, int delta, float rate=1)
 	{
-		sendStat(stat, delta.stringof~"|ms", rate);
+		sendStat(stat, encodeValue(delta, "ms"), rate);
 	}
 
-	private void sendStat(string stat, int value, float rate)
+	private string encodeTiming(int value, string unit)
+	{
+		return delta.stringof~"|"~unit;
+	}
+
+	private string encodeStat(string stat, string value)
+	{
+		if ( this.prefix.length > 0 )
+		{
+			stat = prefix ~ "." ~ stat;
+		}
+
+		stat ~= ":"~value.stringof;
+
+		return stat;
+	}
+
+	private void sendStat(string stat, string value, float rate)
 	{
 		if ( rate < 1.0 && uniform(0.0f, 1.0f) > rate)
 		{
 			return;
 		}
 
-		if ( this.prefix )
-		{
-			stat = prefix ~ "." ~ stat;
-		}
+		stat = encodeStat(stat, value);
 
-		stat ~= ":"~value.stringof;
-		socket.send(stat);
+		this.socket.sendTo(stat, addr);
 	}
 
-	size_t mtu = 512;
-	string prefix = "";
+	private string prefix = "";
+	private Address addr;
+	private UdpSocket socket;
 
-	private SocketType socket;
-}
-
-class Pipeline
-{
-};
-
-class Timer
-{
-};
-
-// 
-unittest
-{
-	// Poor man's mock socket class, specificially the connect and send methods, and check within those for expected values.
-	class TestSocket
+	private unittest
 	{
-		void connect(Address addr)
-		{
-		}
-	}
+		// 1. statsd client supports optional prefixes
+		auto simpleTestClient = new StatsClient("localhost", 8125);
+		assert(simpleTestClient.encodeStat("stat", "value") == "stat:value");
 
-	auto testClient = new StatsClient!TestSocket;
-	assert(testClient.mtu == 512);
-	assert(testClient.prefix == "");
+		auto prefixTestclient = new StatsClient("localhost", 8125, "test");
+		assert(prefixTestclient.encodeStat("stat", "value") == "test.stat:value");
+
+		// 2. encodes values according to specification (e.g. "value|unit")
+		assert(simpleTestClient.encodeValue(42, "ms") == "42|ms");
+	}
 }
