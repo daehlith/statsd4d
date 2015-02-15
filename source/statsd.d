@@ -20,6 +20,7 @@
  */
 module statsd;
 
+import std.conv;
 import std.random : uniform;
 import std.socket : Address, getAddress, InternetAddress, SocketOption, SocketOptionLevel, UdpSocket;
 
@@ -29,12 +30,12 @@ class StatsClient
 	* Create a StatsClient instance.
 	* 
 	* Params:
-	*      host = the host on which the statsd server runs.
-	*      port = the port on which the statsd server runs.
+	*      host = the host on which the statsd server runs, defaults to "localhost".
+	*      port = the port on which the statsd server runs, defaults to 8125.
 	*      prefix = an optional prefix for stats recorded with this StatsClient instance.
 	*      mtu = the maximum transmissions size, defaults to 512 which is reasonable for UDP packets on commodity internet.
 	*/
-	this(string host, ushort port, string prefix="")
+	this(string host="localhost", ushort port=8125, string prefix="")
 	{
 		this(getAddress(host, port)[0], prefix);
 	}
@@ -78,9 +79,9 @@ class StatsClient
 		sendStat(stat, encodeValue(delta, "ms"), rate);
 	}
 
-	private string encodeTiming(int value, string unit)
+	private string encodeValue(int value, string unit)
 	{
-		return delta.stringof~"|"~unit;
+		return to!string(value)~"|"~unit;
 	}
 
 	private string encodeStat(string stat, string value)
@@ -90,7 +91,7 @@ class StatsClient
 			stat = prefix ~ "." ~ stat;
 		}
 
-		stat ~= ":"~value.stringof;
+		stat ~= ":"~value;
 
 		return stat;
 	}
@@ -114,11 +115,11 @@ class StatsClient
 	private unittest
 	{
 		// 1. statsd client supports optional prefixes
-		auto simpleTestClient = new StatsClient("localhost", 8125);
-		assert(simpleTestClient.encodeStat("stat", "value") == "stat:value");
+		auto simpleTestClient = new StatsClient();
+		assert(simpleTestClient.encodeStat("stat", "somevalue") == "stat:somevalue");
 
 		auto prefixTestclient = new StatsClient("localhost", 8125, "test");
-		assert(prefixTestclient.encodeStat("stat", "value") == "test.stat:value");
+		assert(prefixTestclient.encodeStat("stat", "somevalue") == "test.stat:somevalue");
 
 		// 2. encodes values according to specification (e.g. "value|unit")
 		assert(simpleTestClient.encodeValue(42, "ms") == "42|ms");
