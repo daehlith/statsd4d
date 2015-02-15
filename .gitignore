@@ -1,6 +1,7 @@
 # ignore intermediate directories
 .dub
 .build
+dub.selections.json
 
 # ignore visuald specific files
 *.visualdproj
