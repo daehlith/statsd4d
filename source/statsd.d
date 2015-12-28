@@ -33,11 +33,11 @@ class StatsClient
 	*      host = the host on which the statsd server runs, defaults to "localhost".
 	*      port = the port on which the statsd server runs, defaults to 8125.
 	*      prefix = an optional prefix for stats recorded with this StatsClient instance.
-	*      mtu = the maximum transmissions size, defaults to 512 which is reasonable for UDP packets on commodity internet.
+	*      mtu = the maximum transmissions size, defaults to 0. Larger values automatically try to make use multimetric packages.
 	*/
-	this(string host="localhost", ushort port=8125, string prefix="")
+	this(string host="localhost", ushort port=8125, string prefix="", int mtu=0)
 	{
-		this(getAddress(host, port)[0], prefix);
+		this(getAddress(host, port)[0], prefix, mtu);
 	}
 
 	/**
@@ -46,12 +46,21 @@ class StatsClient
 	* Params:
 	*      addr = the address at which the statsd server runs.
 	*      prefix = an optional prefix for stats recorded with this StatsClient instance.
+	*      mtu = the maximum transmissions size, defaults to 0. Larger values automatically try to make use multimetric packages.
 	*/
-	this(Address addr, string prefix="")
+	this(Address addr, string prefix="", int mtu=0)
 	{
 		socket = new UdpSocket;
 		this.addr = addr;
 		this.prefix = prefix;
+		this.mtu = mtu;
+	}
+
+	~this()
+	{
+		if (this.payload.length > 0) {
+			this.socket.sendTo(this.payload, addr);
+		}
 	}
 
 	void inc(string stat, int count=1, float rate=1)
@@ -105,10 +114,24 @@ class StatsClient
 
 		stat = encodeStat(stat, value);
 
-		this.socket.sendTo(stat, addr);
+		if (this.mtu > 0) {
+			if ( ("\n".length + this.payload.length + stat.length) > this.mtu ) {
+				this.socket.sendTo(this.payload, addr);
+				this.payload = "";
+			} 
+			if ( this.payload.length > 0 ) {
+				this.payload ~= "\n"~stat;
+			} else {
+				this.payload = stat;
+			}
+		} else {
+			this.socket.sendTo(stat, addr);
+		}
 	}
 
 	private string prefix = "";
+	private string payload = "";
+	private const int mtu = 0;
 	private Address addr;
 	private UdpSocket socket;
 
@@ -123,5 +146,25 @@ class StatsClient
 
 		// 2. encodes values according to specification (e.g. "value|unit")
 		assert(simpleTestClient.encodeValue(42, "ms") == "42|ms");
+
+		// 3. supports optional MTU declaration
+		assert(simpleTestClient.mtu == 0);		
+
+		auto mtuTestClient = new StatsClient("localhost", 8125, "", 32);
+		assert(mtuTestClient.mtu == 32);
+
+		// 4. multimetric package encoding
+		mtuTestClient.timing("timer", 42);
+		assert(mtuTestClient.payload.length < mtuTestClient.mtu);
+		assert(mtuTestClient.payload == "timer:42|ms");
+		mtuTestClient.timing("timer2", 4711);
+		assert(mtuTestClient.payload.length < mtuTestClient.mtu);
+		assert(mtuTestClient.payload == "timer:42|ms\ntimer2:4711|ms");
+
+		// 5. multimetric package chopping
+		mtuTestClient.timing("longTimerName", 42);
+		assert(mtuTestClient.payload.length < mtuTestClient.mtu);
+		assert(mtuTestClient.payload == "longTimerName:42|ms");
 	}
+
 }
