@@ -75,9 +75,13 @@ class StatsClient
 		inc(stat, -count, rate);
 	}
 
-	void gauge(string stat, int value, float rate=1)
+	void gauge(string stat, int value, float rate=1, bool delta=false)
 	{
-		sendStat(stat, encodeValue(value, "g"), rate);
+		if (delta && value > 0) {
+			sendStat(stat, "+"~encodeValue(value, "g"), rate);
+		} else {
+			sendStat(stat, encodeValue(value, "g"), rate);
+		}
 	}
 
 	void set(string stat, int value, float rate=1)
