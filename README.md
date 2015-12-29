@@ -31,3 +31,4 @@ References
 
  * [statsd Metrics Export Specification](https://github.com/b/statsd_spec)
  * [etsy's statsd definition](https://github.com/etsy/statsd/blob/master/docs/metric_types.md)
+ * [Understanding statsd and graphite](https://blog.pkhamre.com/understanding-statsd-and-graphite/)
