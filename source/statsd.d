@@ -20,6 +20,8 @@
  */
 module statsd;
 
+import core.time;
+
 import std.conv;
 import std.random : uniform;
 import std.socket : Address, getAddress, InternetAddress, SocketOption, SocketOptionLevel, UdpSocket;
@@ -166,5 +168,23 @@ class StatsClient
 		assert(mtuTestClient.payload.length < mtuTestClient.mtu);
 		assert(mtuTestClient.payload == "longTimerName:42|ms");
 	}
+}
 
+class Timing
+{
+	this(StatsClient client, string name)
+	{
+		this.client = client;
+		this.name = name;
+		this.start = MonoTime.currTime;
+	}
+
+	~this()
+	{
+		this.client.timing(this.name, to!int((MonoTime.currTime - this.start).total!("msecs")));
+	}
+
+	private StatsClient client;
+	private string name;
+	private MonoTime start;
 }
