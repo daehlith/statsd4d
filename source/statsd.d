@@ -24,10 +24,39 @@ import core.time;
 
 import std.conv;
 import std.random : uniform;
-import std.socket : Address, getAddress, InternetAddress, SocketOption, SocketOptionLevel, UdpSocket;
+
+version(Have_vibe_d_core)
+{
+	import vibe.core.net;
+
+	alias UdpSocket = vibe.core.net.UDPConnection;
+	alias Address = vibe.core.net.NetworkAddress;
+}
+else
+{
+	import std.socket : Address, getAddress, UdpSocket;
+}
 
 class StatsClient
 {
+version(Have_vibe_d_core)
+{
+	/**
+	* Create a StatsClient instance.
+	* 
+	* Params:
+	*      ip = the ip on which the statsd server runs, defaults to "127.0.0.1".
+	*      port = the port on which the statsd server runs, defaults to 8125.
+	*      prefix = an optional prefix for stats recorded with this StatsClient instance.
+	*      mtu = the maximum transmissions size, defaults to 0. Larger values automatically try to make use multimetric packages.
+	*/
+	this(string ip="127.0.0.1", ushort port=8125, string prefix="", int mtu=0)
+	{
+		addr = resolveHost(ip, 0, false);
+		addr.port = port;
+		this(addr, prefix, mtu);
+	}
+} else {
 	/**
 	* Create a StatsClient instance.
 	* 
@@ -41,6 +70,7 @@ class StatsClient
 	{
 		this(getAddress(host, port)[0], prefix, mtu);
 	}
+}
 
 	/**
 	* Create a StatsClient instance.
@@ -52,7 +82,12 @@ class StatsClient
 	*/
 	this(Address addr, string prefix="", int mtu=0)
 	{
-		socket = new UdpSocket;
+		version(Have_vibe_d_core)
+		{
+			socket = listenUDP(0);
+		} else {
+			socket = new UdpSocket;
+		}
 		this.addr = addr;
 		this.prefix = prefix;
 		this.mtu = mtu;
@@ -61,7 +96,7 @@ class StatsClient
 	~this()
 	{
 		if (this.payload.length > 0) {
-			this.socket.sendTo(this.payload, addr);
+			this.sendImpl(this.payload);
 		}
 	}
 
@@ -122,7 +157,7 @@ class StatsClient
 
 		if (this.mtu > 0) {
 			if ( ("\n".length + this.payload.length + stat.length) > this.mtu ) {
-				this.socket.sendTo(this.payload, addr);
+				this.sendImpl(this.payload);
 				this.payload = "";
 			} 
 			if ( this.payload.length > 0 ) {
@@ -131,6 +166,18 @@ class StatsClient
 				this.payload = stat;
 			}
 		} else {
+			this.sendImpl(stat);
+		}
+	}
+
+	private void sendImpl(string stat)
+	{
+		version(Have_vibe_d_core)
+		{
+			this.socket.send(cast(const(ubyte[]))stat, &addr);
+		}
+		else
+		{
 			this.socket.sendTo(stat, addr);
 		}
 	}
@@ -147,8 +194,14 @@ class StatsClient
 		auto simpleTestClient = new StatsClient();
 		assert(simpleTestClient.encodeStat("stat", "somevalue") == "stat:somevalue");
 
-		auto prefixTestclient = new StatsClient("localhost", 8125, "test");
-		assert(prefixTestclient.encodeStat("stat", "somevalue") == "test.stat:somevalue");
+		version(Have_vibe_d_core)
+		{
+			auto prefixTestclient = new StatsClient("127.0.0.1", 8125, "test");
+			assert(prefixTestclient.encodeStat("stat", "somevalue") == "test.stat:somevalue");
+		} else {
+			auto prefixTestclient = new StatsClient("localhost", 8125, "test");
+			assert(prefixTestclient.encodeStat("stat", "somevalue") == "test.stat:somevalue");
+		}
 
 		// 2. encodes values according to specification (e.g. "value|unit")
 		assert(simpleTestClient.encodeValue(42, "ms") == "42|ms");
@@ -156,7 +209,7 @@ class StatsClient
 		// 3. supports optional MTU declaration
 		assert(simpleTestClient.mtu == 0);		
 
-		auto mtuTestClient = new StatsClient("localhost", 8125, "", 32);
+		auto mtuTestClient = new StatsClient("127.0.0.1", 8125, "", 32);
 		assert(mtuTestClient.mtu == 32);
 
 		// 4. multimetric package encoding

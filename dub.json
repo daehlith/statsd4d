@@ -1,9 +1,21 @@
 {
 	"name": "statsd4d",
-	"description": "A statsd client for D",
+	"description": "A statsd client implementation",
 	"authors": ["Thomas Daehling"],
 	"homepage": "http://www.github.com/daehlith/statsd4d/",
 	"license": "MIT",
 	"targetPath": ".build",
 	"targetType": "library",
+
+	"configurations": [
+		{
+			"name": "library",
+		},
+		{
+			"name": "vibed",
+			"dependencies": {
+				"vibe-d:core": ">=0.7.28",
+			},
+		},
+	],
 }
